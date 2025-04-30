@@ -1,6 +1,5 @@
 import { create, getClickName } from './lib.js'
 
-const Rect = create('rect')
 const Circle = create('circle')
 const Path = create('path')
 
@@ -163,16 +162,11 @@ export const init = (params = {}) => {
         d: getLink(start.x, start.y, end.x, end.y)
       })
     }
+
     links.push(link)
     group.appendChild(link.elem)
 
     dispatch(actions.addLink, { start, end })
-  }
-
-  const deleteLink = link => {
-    links = links.filter(l => l !== link)
-    link.elem.remove()
-    dispatch(actions.removeLink, link)
   }
 
   const addPoint = (x, y) => {
@@ -183,10 +177,15 @@ export const init = (params = {}) => {
     dispatch(actions.addPoint, point)
   }
 
+  const handleZoom = (key, scaleValue) => {
+    if (isDown(key)) {
+      scale = scaleValue
+      applyPanAndScale()
+    }
+  }
+
   const executeUpdate = () => {
     if (handle('blur')) {
-      // On window blur we want to remove all keys because we can't catch
-      // key up event.
       for (const [name] of inputsDown) {
         inputsUp.add(name)
       }
@@ -198,25 +197,10 @@ export const init = (params = {}) => {
       drawSelection()
     }
 
-    if (isDown(KEYS.zoomIn)) {
-      scale = prevPowerOf2(scale * 2)
-      applyPanAndScale()
-    }
-
-    if (isDown(KEYS.zoomInPrecise)) {
-      scale = scale * 1.2
-      applyPanAndScale()
-    }
-
-    if (isDown(KEYS.zoomOut)) {
-      scale = nextPowerOf2(scale / 2)
-      applyPanAndScale()
-    }
-
-    if (isDown(KEYS.zoomOutPrecise)) {
-      scale = scale * 0.8
-      applyPanAndScale()
-    }
+    handleZoom(KEYS.zoomIn, prevPowerOf2(scale * 2))
+    handleZoom(KEYS.zoomInPrecise, scale * 1.2)
+    handleZoom(KEYS.zoomOut, nextPowerOf2(scale / 2))
+    handleZoom(KEYS.zoomOutPrecise, scale * 0.8)
 
     if (isDown(KEYS.grab)) {
       svg.classList.add('grab')
@@ -290,10 +274,11 @@ export const init = (params = {}) => {
       }
     }
 
-    for (const key of inputsUp) {
-      inputsUp.delete(key)
-      inputsDown.delete(key)
-    }
+    const keysToDelete = [...inputsUp];
+    keysToDelete.forEach(key => {
+      inputsUp.delete(key);
+      inputsDown.delete(key);
+    });
 
     now = Date.now()
     updateRequested = inputsDown.size && requestAnimationFrame(executeUpdate)
@@ -305,14 +290,19 @@ export const init = (params = {}) => {
     events.add(eventName)
   }
   const svgWheel = e => {
-    e.preventDefault()
+    preventDefault(e)
     scale = scale + Math.sign(e.deltaY) * (scale / 20)
     update('resize')
   }
   const preventDefault = e => e.preventDefault()
-  const windowMousemove = e => {
+
+  const getMousePosition = (e) => {
     mouseX = e.x ? e.x : e.clientX
     mouseY = e.y ? e.y : e.clientY
+  }
+
+  const windowMousemove = e => {
+    getMousePosition(e)
     update('mousemove')
   }
   const windowBlur = e => update('blur')
@@ -324,23 +314,22 @@ export const init = (params = {}) => {
     update('keyboard')
   }
 
-  const svgMouseup = e => {
-    e.preventDefault()
-    mouseX = e.x ? e.x : e.clientX
-    mouseY = e.y ? e.y : e.clientY
+  const handleMouseEvent = (e, isDown) => {
+    preventDefault(e)
+    getMousePosition(e)
+
     const name = getClickName(e)
-    name && inputsUp.add(name)
+
+    if (isDown) {
+      name && inputsDown.set(name, Date.now())
+    else
+      name && inputsUp.add(name)
+
     update('mousemove')
   }
 
-  const svgMousedown = e => {
-    e.preventDefault()
-    mouseX = e.x ? e.x : e.clientX
-    mouseY = e.y ? e.y : e.clientY
-    const name = getClickName(e)
-    name && inputsDown.set(name, Date.now())
-    update('mousemove')
-  }
+  const svgMouseup = e => handleMouseEvent(e, false)
+  const svgMousedown = e => handleMouseEvent(e, true)
 
   grid.forEach(dot => group.appendChild(dot))
   group.appendChild(hoverMarker)
